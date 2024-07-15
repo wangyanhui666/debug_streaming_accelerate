@@ -126,15 +126,17 @@ def main(args):
     # Setup a feature folder:
     if rank == 0:
         os.makedirs(args.features_path, exist_ok=True)
-        os.makedirs(os.path.join(args.features_path, 'imagenet256_features'), exist_ok=True)
-        os.makedirs(os.path.join(args.features_path, 'imagenet256_labels'), exist_ok=True)
+        os.makedirs(os.path.join(args.features_path, 'imagenet512_features'), exist_ok=True)
+        os.makedirs(os.path.join(args.features_path, 'imagenet512_labels'), exist_ok=True)
 
     # Create model:
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
     latent_size = args.image_size // 8
+    print("load vae..")
     vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
 
     # Setup data:
+    print("setup data..")
     transform = transforms.Compose([
         transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
         transforms.RandomHorizontalFlip(),
@@ -158,7 +160,7 @@ def main(args):
         pin_memory=True,
         drop_last=True
     )
-
+    print("start extract feature..")
     train_steps = 0
     for x, y in loader:
         x = x.to(device)
@@ -168,10 +170,10 @@ def main(args):
             x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             
         x = x.detach().cpu().numpy()    # (1, 4, 32, 32)
-        np.save(f'{args.features_path}/imagenet256_features/{train_steps}.npy', x)
+        np.save(f'{args.features_path}/imagenet512_features/{train_steps}.npy', x)
 
         y = y.detach().cpu().numpy()    # (1,)
-        np.save(f'{args.features_path}/imagenet256_labels/{train_steps}.npy', y)
+        np.save(f'{args.features_path}/imagenet512_labels/{train_steps}.npy', y)
             
         train_steps += 1
         print(train_steps)
@@ -183,7 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--features-path", type=str, default="features")
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
+    parser.add_argument("--image-size", type=int, choices=[256, 512], default=512)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--global-batch-size", type=int, default=256)

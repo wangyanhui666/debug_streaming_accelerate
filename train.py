@@ -161,8 +161,8 @@ def main(args):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
 
     # Setup data:
-    features_dir = f"{args.feature_path}/imagenet256_features"
-    labels_dir = f"{args.feature_path}/imagenet256_labels"
+    features_dir = f"{args.feature_path}/imagenet512_features"
+    labels_dir = f"{args.feature_path}/imagenet512_labels"
     dataset = CustomDataset(features_dir, labels_dir)
     loader = DataLoader(
         dataset,
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     parser.add_argument("--feature-path", type=str, default="features")
     parser.add_argument("--results-dir", type=str, default="results")
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
-    parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
+    parser.add_argument("--image-size", type=int, choices=[256, 512], default=512)
     parser.add_argument("--num-classes", type=int, default=1000)
     parser.add_argument("--epochs", type=int, default=1400)
     parser.add_argument("--global-batch-size", type=int, default=256)

@@ -68,6 +68,8 @@ To extract ImageNet features with `1` GPUs on one node:
 
 ```bash
 torchrun --nnodes=1 --nproc_per_node=1 extract_features.py --model DiT-XL/2 --data-path /path/to/imagenet/train --features-path /path/to/store/features
+### useblob
+torchrun --nnodes=1 --nproc_per_node=4 extract_features.py --model DiT-XL/2 --data-path ~/t2vgusw2/videos/imagenet/ILSVRC2012/ILSVRC2012/train --features-path ~/t2vgusw2/videos/imagenet/sd_latents/dit_extact_latents_512
 ```
 
 ### Training DiT
