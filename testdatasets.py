@@ -54,6 +54,30 @@ class ZipDatasetFolder(VisionDataset):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         allow_empty: bool = False,
     ) -> List[Tuple[str, int]]:
+        """Generates a list of samples of a form (path_to_sample, class).
+
+        This can be overridden to e.g. read files from a compressed zip file instead of from the disk.
+
+        Args:
+            directory (str): root dataset directory, corresponding to ``self.root``.
+            class_to_idx (Dict[str, int]): Dictionary mapping class name to class index.
+            extensions (optional): A list of allowed extensions.
+                Either extensions or is_valid_file should be passed. Defaults to None.
+            is_valid_file (optional): A function that takes path of a file
+                and checks if the file is a valid file
+                (used to check of corrupt files) both extensions and
+                is_valid_file should not be passed. Defaults to None.
+            allow_empty(bool, optional): If True, empty folders are considered to be valid classes.
+                An error is raised on empty folders if False (default).
+
+        Raises:
+            ValueError: In case ``class_to_idx`` is empty.
+            ValueError: In case ``extensions`` and ``is_valid_file`` are None or both are not None.
+            FileNotFoundError: In case no valid file was found for any class.
+
+        Returns:
+            List[Tuple[str, int]]: samples of a form (path_to_sample, class)
+        """
         if class_to_idx is None:
             raise ValueError("The class_to_idx parameter cannot be None.")
 
@@ -63,7 +87,7 @@ class ZipDatasetFolder(VisionDataset):
             if zip_info.is_dir():
                 continue
             path = Path(zip_info.filename)
-            if path.parent.name in class_to_idx:
+            if path.parent.name in class_to_idx and str(path).startswith(str(directory)):
                 if extensions is None or path.suffix in extensions:
                     item = (str(path), class_to_idx[path.parent.name])
                     instances.append(item)
