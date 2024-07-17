@@ -1,0 +1,1 @@
+accelerate launch --multi_gpu --num_processes 4 --mixed_precision fp16 train.py --model DiT-XL/2 --features-path ~/t2vgusw2/videos/imagenet/sd_latents/dit_extact_latents_512_real --results-dir ~/guangtingsc/t2vg/dit/logs/0717_dit_imagenet512_baseline_test2

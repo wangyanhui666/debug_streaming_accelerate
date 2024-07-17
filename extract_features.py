@@ -161,6 +161,7 @@ def main(args):
         drop_last=True
     )
     print("start extract feature..")
+    print("world sitz",dist.get_world_size())
     train_steps = 0
     for x, y in loader:
         x = x.to(device)
@@ -170,13 +171,14 @@ def main(args):
             x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             
         x = x.detach().cpu().numpy()    # (1, 4, 32, 32)
-        np.save(f'{args.features_path}/imagenet512_features/{train_steps}.npy', x)
+        train_steps_dist=train_steps*dist.get_world_size()+rank
+        np.save(f'{args.features_path}/imagenet512_features/{train_steps_dist}.npy', x)
 
         y = y.detach().cpu().numpy()    # (1,)
-        np.save(f'{args.features_path}/imagenet512_labels/{train_steps}.npy', y)
+        np.save(f'{args.features_path}/imagenet512_labels/{train_steps_dist}.npy', y)
             
         train_steps += 1
-        print(train_steps)
+        print(train_steps_dist)
 
 if __name__ == "__main__":
     # Default args here will train DiT-XL/2 with the hyperparameters we used in our paper (except training iters).

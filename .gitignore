@@ -4,6 +4,7 @@
 *.egg-info
 build
 /outputs
+/results
 /checkpoints
 /checkpoints_bk
 3rd_lib
