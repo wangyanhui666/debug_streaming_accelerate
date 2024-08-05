@@ -25,6 +25,7 @@ sgm.egg-info
 src
 *.log
 *.pth
+*.png
 
 /debug
 scripts/demo/sampling_command.py
