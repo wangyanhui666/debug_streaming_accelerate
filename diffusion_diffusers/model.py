@@ -1,4 +1,6 @@
-from diffusers import DiTTransformer2DModel,AutoencoderKL,ModelMixin,ConfigMixin,FromOriginalModelMixin,register_to_config
+from diffusers import DiTTransformer2DModel,AutoencoderKL,ModelMixin,ConfigMixin
+from diffusers.configuration_utils import register_to_config
+from diffusers.loaders.single_file_model import FromOriginalModelMixin
 from torch import nn
 import os
 import json
@@ -20,7 +22,7 @@ import torch
 import torch.nn as nn
 
 
-class VAE(ModelMixin, ConfigMixin, FromOriginalModelMixin):
+class VAE(ModelMixin, ConfigMixin,FromOriginalModelMixin):
     @register_to_config
     def __init__(self, scaling_factor=1.0):
         super().__init__()

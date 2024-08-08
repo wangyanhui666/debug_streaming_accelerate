@@ -171,12 +171,12 @@ class TrainingConfig:
     learning_rate = 1e-4
     lr_warmup_steps = 500
     save_image_epochs = 300
-    save_model_epochs = 1
+    save_model_epochs = 1000
     mixed_precision = "bf16"  # `no` for float32, `fp16` for automatic mixed precision
-    output_dir = "results/0809_diffdiff-butterflies-64"  # the model name locally and on the HF Hub
+    output_dir = "results/0810_diffdiff-butterflies-64"  # the model name locally and on the HF Hub
     
     push_to_hub = True  # whether to upload the saved model to the HF Hub
-    hub_model_id = "wangyanhui666/test_diffdiff2"  # the name of the repository to create on the HF Hub
+    hub_model_id = "wangyanhui666/test_diffdiff3"  # the name of the repository to create on the HF Hub
     hub_private_repo = True
     overwrite_output_dir = True  # overwrite the old model when re-running the notebook
     seed = 0
@@ -237,4 +237,4 @@ lr_scheduler = get_cosine_schedule_with_warmup(
 
 args = (config, model, model2, vae, noise_scheduler1,noise_scheduler2, optimizer, train_dataloader, lr_scheduler)
 
-notebook_launcher(train_loop, args, num_processes=1)
+notebook_launcher(train_loop, args, num_processes=4)

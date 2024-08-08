@@ -3,3 +3,4 @@ diffusers
 accelerate
 tensorboard
 datasets[vision]
+matplotlib

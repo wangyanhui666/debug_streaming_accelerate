@@ -113,7 +113,7 @@ def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_s
                 evaluate(config, epoch, pipeline)
 
             if (epoch + 1) % config.save_model_epochs == 0 or epoch == config.num_epochs - 1:
-                if config.push_to_hub:
+                if False:
                     upload_folder(
                         repo_id=repo_id,
                         folder_path=config.output_dir,
