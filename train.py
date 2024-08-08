@@ -8,6 +8,7 @@
 A minimal training script for DiT.
 """
 import torch
+import torch._dynamo
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -27,7 +28,7 @@ import argparse
 import logging
 import os
 from accelerate import Accelerator
-
+from accelerate.utils import TorchDynamoPlugin
 from models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
@@ -150,6 +151,10 @@ def main(args):
     )
     # Note that parameter initialization is done within the DiT constructor
     model = model.to(device)
+    # # compile
+    # # 禁用DDP优化以避免不兼容问题
+    # torch._dynamo.config.optimize_ddp = False
+    # model = torch.compile(model)
     ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     requires_grad(ema, False)
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
