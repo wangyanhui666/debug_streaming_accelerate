@@ -1,26 +1,37 @@
-from diffusers import DiTTransformer2DModel
+from diffusers import DiTTransformer2DModel,AutoencoderKL,ModelMixin,ConfigMixin,FromOriginalModelMixin,register_to_config
 from torch import nn
+import os
+import json
 def DiT_XL_2(**kwargs):
     return DiTTransformer2DModel(num_layers=28, attention_head_dim=72,patch_size=2,num_attention_heads=16,**kwargs)
 
+def DiT_L_2(**kwargs):
+    return DiTTransformer2DModel(num_layers=24, attention_head_dim=64,patch_size=2,num_attention_heads=16,**kwargs)
+
+def DiT_B_2(**kwargs):
+    return DiTTransformer2DModel(num_layers=12, attention_head_dim=64,patch_size=2,num_attention_heads=12,**kwargs)
+
+def DiT_S_2(**kwargs):
+    return DiTTransformer2DModel(num_layers=12, attention_head_dim=64,patch_size=2,num_attention_heads=6,**kwargs)
 
 
-class VAEConfig(nn.Module):
-    def __init__(self, scaling_factor):
-        super(VAEConfig, self).__init__()
+
+import torch
+import torch.nn as nn
+
+
+class VAE(ModelMixin, ConfigMixin, FromOriginalModelMixin):
+    @register_to_config
+    def __init__(self, scaling_factor=1.0):
+        super().__init__()
         self.scaling_factor = scaling_factor
-
-class VAE(nn.Module):
-    def __init__(self, config):
-        super(VAE, self).__init__()
-        self.config = config
 
     def decode(self, latents):
         # This is a mock decode function for demonstration purposes
         class Sample:
             def __init__(self, data):
                 self.data = data
-            
+
             @property
             def sample(self):
                 return self.data
@@ -28,10 +39,8 @@ class VAE(nn.Module):
         # Assuming the decode function reverses the scaling operation
         return Sample(latents * self.config.scaling_factor)
 
-def Vae(**kwargs):
-    scaling_factor = 1.0
-    vae_config = VAEConfig(scaling_factor)
-    vae = VAE(vae_config)
+def Vae():
+    vae = VAE()
     return vae
 
 DiT_models = {
