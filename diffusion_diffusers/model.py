@@ -22,12 +22,13 @@ import torch
 import torch.nn as nn
 
 
-class VAE(ModelMixin, ConfigMixin,FromOriginalModelMixin):
+class VAE(ModelMixin, ConfigMixin, FromOriginalModelMixin):
     @register_to_config
     def __init__(self, scaling_factor=1.0):
         super().__init__()
         self.scaling_factor = scaling_factor
-
+        self.fixbug=nn.Parameter(torch.tensor(1.0))
+    
     def decode(self, latents):
         # This is a mock decode function for demonstration purposes
         class Sample:
@@ -39,7 +40,7 @@ class VAE(ModelMixin, ConfigMixin,FromOriginalModelMixin):
                 return self.data
         
         # Assuming the decode function reverses the scaling operation
-        return Sample(latents * self.config.scaling_factor)
+        return Sample(latents * self.scaling_factor)
 
 def Vae():
     vae = VAE()
