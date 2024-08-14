@@ -1,6 +1,6 @@
 import os
 from diffusion_diffusers.pipeline import DiffDiffPipeline
-from diffusers import DDPMScheduler, DiTPipeline
+from diffusers import DDPMScheduler, DDIMScheduler, DiTPipeline
 import torch
 import time
 from dataclasses import dataclass
@@ -77,7 +77,7 @@ class TrainingConfig:
     save_image_epochs = 300
     save_model_epochs = 1000
     mixed_precision = "bf16"  # `no` for float32, `fp16` for automatic mixed precision
-    output_dir = "results/0810_ddpm-butterflies-64/inference"  # the model name locally and on the HF Hub
+    output_dir = "results/0813_dits2_ddpm-butterflies-64/inference"  # the model name locally and on the HF Hub
     
     push_to_hub = True  # whether to upload the saved model to the HF Hub
     hub_model_id = "wangyanhui666/test_diffdiff3"  # the name of the repository to create on the HF Hub
@@ -87,11 +87,19 @@ class TrainingConfig:
 
 config = TrainingConfig()
 # Load the pipeline
-pipeline = DiTPipeline.from_pretrained("./results/0810_ddpm-butterflies-64",torch_dtype=torch.float16, use_safetensors=True)
-pipeline = pipeline.to("cuda")
+pipeline = DiTPipeline.from_pretrained("./results/0813_dits2_ddpm-butterflies-64",torch_dtype=torch.float16, use_safetensors=True)
+
 steps_pairs = [(1, 20), (2, 20), (3, 20), (4, 20), (5, 20), (10, 20), (20,20),(30,20),(40,20),(50,20)]  # 定义不同的step1, step2组合
 # generate_images_for_steps(pipeline, config, steps_pairs)
 if isinstance(pipeline, DiTPipeline):
+    scheduler=DDIMScheduler.from_config(pipeline.scheduler.config)
+    pipeline.scheduler = scheduler
+    pipeline = pipeline.to("cuda")
     generate_images_for_steps_baseline(pipeline, config, steps_pairs)
 else:
+    scheduler1=DDIMScheduler.from_config(pipeline.scheduler1.config)
+    scheduler2=DDIMScheduler.from_config(pipeline.scheduler2.config)
+    pipeline.scheduler1 = scheduler1
+    pipeline.scheduler2 = scheduler2
+    pipeline = pipeline.to("cuda")
     generate_images_for_steps(pipeline, config, steps_pairs)
