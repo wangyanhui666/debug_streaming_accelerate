@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from torchvision import transforms
 import torch
 from diffusers import DDPMScheduler,DiTPipeline
-from diffusion_diffusers.model import DiT_XL_2, Vae
+from diffusion_diffusers.model import DiT_XL_2, Vae, DiT_S_2
 from PIL import Image
 import torch.nn.functional as F
 from diffusers.optimization import get_cosine_schedule_with_warmup
@@ -22,6 +22,8 @@ def evaluate(config, epoch, pipeline):
     class_labels=[0 for i in range(config.eval_batch_size)]
     images = pipeline(
         class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=50,
         generator=torch.Generator(device='cpu').manual_seed(config.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
     ).images
 
@@ -31,8 +33,35 @@ def evaluate(config, epoch, pipeline):
     # Save the images
     test_dir = os.path.join(config.output_dir, "samples")
     os.makedirs(test_dir, exist_ok=True)
-    image_grid.save(f"{test_dir}/{epoch:04d}.png")
+    image_grid.save(f"{test_dir}/{epoch:04d}_{50}.png")
 
+    images = pipeline(
+        class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=1,
+        generator=torch.Generator(device='cpu').manual_seed(config.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
+    ).images
+    # Make a grid out of the images
+    image_grid = make_image_grid(images, rows=4, cols=4)
+
+    # Save the images
+    test_dir = os.path.join(config.output_dir, "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid.save(f"{test_dir}/{epoch:04d}_{1}.png")
+
+    images = pipeline(
+        class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=2,
+        generator=torch.Generator(device='cpu').manual_seed(config.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
+    ).images
+    # Make a grid out of the images
+    image_grid = make_image_grid(images, rows=4, cols=4)
+
+    # Save the images
+    test_dir = os.path.join(config.output_dir, "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid.save(f"{test_dir}/{epoch:04d}_{2}.png")
 
 def train_loop(config, model, noise_scheduler, optimizer, train_dataloader, lr_scheduler):
     # Initialize accelerator and tensorboard logging
@@ -133,13 +162,13 @@ class TrainingConfig:
     gradient_accumulation_steps = 1
     learning_rate = 1e-4
     lr_warmup_steps = 500
-    save_image_epochs = 1
+    save_image_epochs = 300
     save_model_epochs = 1000
     mixed_precision = "bf16"  # `no` for float32, `fp16` for automatic mixed precision
-    output_dir = "results/ddpm-butterflies-64"  # the model name locally and on the HF Hub
+    output_dir = "results/0813_dits2_ddpm-butterflies-64"  # the model name locally and on the HF Hub
     
     push_to_hub = True  # whether to upload the saved model to the HF Hub
-    hub_model_id = "wangyanhui666/test_dit"  # the name of the repository to create on the HF Hub
+    hub_model_id = "wangyanhui666/test_dit2_s2"  # the name of the repository to create on the HF Hub
     hub_private_repo = True
     overwrite_output_dir = True  # overwrite the old model when re-running the notebook
     seed = 0
@@ -169,7 +198,7 @@ def transform(examples):
 dataset.set_transform(transform)
 train_dataloader = torch.utils.data.DataLoader(dataset, batch_size=config.train_batch_size, shuffle=True)
 
-model=DiT_XL_2(sample_size=config.image_size,in_channels=3,out_channels=3)
+model=DiT_S_2(sample_size=config.image_size,in_channels=3,out_channels=3)
 
 
 # check the sample image shape matches the model output shape

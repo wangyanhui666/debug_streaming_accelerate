@@ -17,7 +17,6 @@ from huggingface_hub import create_repo, upload_folder
 from tqdm.auto import tqdm
 from pathlib import Path
 import os
-from huggingface_hub import notebook_login
 
 def evaluate(config, epoch, pipeline):
     # Sample some images from random noise (this is the backward diffusion process).
