@@ -230,8 +230,9 @@ class DiffDiffPipeline(DiffusionPipeline):
                 latents2, _ = latent_model_input2.chunk(2, dim=0)
             else:
                 latents2 = latent_model_input2
-            # end of scheduler2 get x_0_pred latents2
-            # get noise pred of full model
+            # end of scheduler2 get x0_pred latents2
+            # get noise pred of full model from xt and x0_pred
+            # TODO this maybe only works for DDPM DDIM
             alpha_prod_t1 = self.scheduler1.alphas_cumprod[t1]
             beta_prod_t1 = 1 - alpha_prod_t1
             noise_pred1= (latent_model_input1 - alpha_prod_t1**(0.5) * latents2) / beta_prod_t1**(0.5)
