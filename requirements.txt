@@ -4,3 +4,4 @@ accelerate
 tensorboard
 datasets[vision]
 matplotlib
+wandb
