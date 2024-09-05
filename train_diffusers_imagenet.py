@@ -22,19 +22,69 @@ from torchvision import transforms
 from tqdm.auto import tqdm
 
 import diffusers
-from diffusers import DDPMPipeline, DDPMScheduler, AutoencoderKL,UNet2DConditionModel
+from diffusers import DDPMPipeline, DiTPipeline, DDPMScheduler, AutoencoderKL,DiTTransformer2DModel
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import EMAModel
-from diffusers.utils import check_min_version, is_accelerate_version, is_tensorboard_available, is_wandb_available
+from diffusers.utils import check_min_version, is_accelerate_version, is_tensorboard_available, is_wandb_available, make_image_grid
 from diffusers.utils.import_utils import is_xformers_available
 
 from diffusion_diffusers.model import DiT_XL_2
 from diffusion_diffusers.dataset import CustomDataset
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
-check_min_version("0.31.0.dev0")
+# check_min_version("0.31.0.dev0")
 
 logger = get_logger(__name__, log_level="INFO")
+
+
+
+def evaluate(args, epoch, pipeline):
+    # Sample some images from random noise (this is the backward diffusion process).
+    # The default pipeline output type is `List[PIL.Image]`
+    class_labels=[i for i in range(args.eval_batch_size)]
+    images = pipeline(
+        class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=50,
+        generator=torch.Generator(device='cpu').manual_seed(args.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
+    ).images
+
+    # Make a grid out of the images
+    image_grid_1 = make_image_grid(images, rows=4, cols=4)
+
+    # Save the images
+    test_dir = os.path.join(args.output_dir, "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid_1.save(f"{test_dir}/{epoch:04d}_{50}.png")
+
+    images = pipeline(
+        class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=1,
+        generator=torch.Generator(device='cpu').manual_seed(args.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
+    ).images
+    # Make a grid out of the images
+    image_grid_2 = make_image_grid(images, rows=4, cols=4)
+
+    # Save the images
+    test_dir = os.path.join(args.output_dir, "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid_2.save(f"{test_dir}/{epoch:04d}_{1}.png")
+
+    images = pipeline(
+        class_labels=class_labels,
+        guidance_scale=1.0,
+        num_inference_steps=2,
+        generator=torch.Generator(device='cpu').manual_seed(args.seed), # Use a separate torch generator to avoid rewinding the random state of the main training loop
+    ).images
+    # Make a grid out of the images
+    image_grid_3 = make_image_grid(images, rows=4, cols=4)
+
+    # Save the images
+    test_dir = os.path.join(args.output_dir, "samples")
+    os.makedirs(test_dir, exist_ok=True)
+    image_grid_3.save(f"{test_dir}/{epoch:04d}_{2}.png")
+    return [image_grid_1,image_grid_2,image_grid_3]
 
 
 def _extract_into_tensor(arr, timesteps, broadcast_shape):
@@ -72,6 +122,7 @@ def parse_args():
         help="The config of the UNet model to train, leave as None to use standard DDPM configuration.",
     )
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
+    parser.add_argument("--vae_path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
     parser.add_argument(
         "--train_data_dir",
         type=str,
@@ -95,31 +146,17 @@ def parse_args():
         default=None,
         help="The directory where the downloaded models and datasets will be stored.",
     )
-    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument("--seed", type=int, default=123, help="A seed for reproducible training.")
     parser.add_argument(
         "--resolution",
         type=int,
-        default=64,
+        default=32,
         help=(
             "The resolution for input images, all the images in the train/validation dataset will be resized to this"
             " resolution"
         ),
     )
-    parser.add_argument(
-        "--center_crop",
-        default=False,
-        action="store_true",
-        help=(
-            "Whether to center crop the input images to the resolution. If not set, the images will be randomly"
-            " cropped. The images will be resized to the resolution first before cropping."
-        ),
-    )
-    parser.add_argument(
-        "--random_flip",
-        default=False,
-        action="store_true",
-        help="whether to randomly flip images horizontally",
-    )
+
     parser.add_argument(
         "--train_batch_size", type=int, default=16, help="Batch size (per device) for the training dataloader."
     )
@@ -136,7 +173,13 @@ def parse_args():
         ),
     )
     parser.add_argument("--num_epochs", type=int, default=100)
-    parser.add_argument("--save_images_epochs", type=int, default=10, help="How often to save images during training.")
+    # parser.add_argument( #TODO may not be needed
+    #     "--max_train_steps",
+    #     type=int,
+    #     default=None,
+    #     help="Total number of training steps to perform.  If provided, overrides num_train_epochs.",
+    # )
+    parser.add_argument("--save_images_epochs", type=int, default=1, help="How often to save images during training.")
     parser.add_argument(
         "--save_model_epochs", type=int, default=10, help="How often to save the model during training."
     )
@@ -283,7 +326,7 @@ def parse_args():
     if env_local_rank != -1 and env_local_rank != args.local_rank:
         args.local_rank = env_local_rank
 
-    if args.dataset_name is None and args.train_data_dir is None:
+    if args.dataset_path is None and args.train_data_dir is None:
         raise ValueError("You must specify either a dataset name from the hub or a train data directory.")
 
     return args
@@ -311,24 +354,24 @@ def main(args):
             raise ImportError("Make sure to install wandb if you want to use it for logging during training.")
         import wandb
 
-    model_cls=DiT_XL_2(sample_size=args.resolution,in_channels=4,out_channels=4) # TODO model_cls 和真实model如何区分使用
+    
     # `accelerate` 0.16.0 will have better support for customized saving
     if version.parse(accelerate.__version__) >= version.parse("0.16.0"):
         # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
         def save_model_hook(models, weights, output_dir):
             if accelerator.is_main_process:
                 if args.use_ema:
-                    ema_model.save_pretrained(os.path.join(output_dir, "model_ema"))
+                    ema_model.save_pretrained(os.path.join(output_dir, "transformer_ema"))
 
                 for i, model in enumerate(models):
-                    model.save_pretrained(os.path.join(output_dir, "model"))
+                    model.save_pretrained(os.path.join(output_dir, "transformer"))
 
                     # make sure to pop weight so that corresponding model is not saved again
                     weights.pop()
 
         def load_model_hook(models, input_dir):
             if args.use_ema:
-                load_model = EMAModel.from_pretrained(os.path.join(input_dir, "model_ema"), model_cls=model_cls)
+                load_model = EMAModel.from_pretrained(os.path.join(input_dir, "transformer_ema"), model_cls=DiTTransformer2DModel)
                 ema_model.load_state_dict(load_model.state_dict())
                 ema_model.to(accelerator.device)
                 del load_model
@@ -338,7 +381,7 @@ def main(args):
                 model = models.pop()
 
                 # load diffusers style into model
-                load_model = DiT_XL_2.from_pretrained(input_dir, subfolder="model")
+                load_model = DiTTransformer2DModel.from_pretrained(input_dir, subfolder="transformer")
                 model.register_to_config(**load_model.config)
 
                 model.load_state_dict(load_model.state_dict())
@@ -375,9 +418,13 @@ def main(args):
             repo_id = create_repo(
                 repo_id=args.hub_model_id or Path(args.output_dir).name, exist_ok=True, token=args.hub_token
             ).repo_id
+
+
     # Initialize the vae
     print("load vae..")
-    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}")
+    if args.vae_path is None:
+        raise ValueError("You must specify a path to the VAE model.")
+    vae = AutoencoderKL.from_pretrained(args.vae_path)
     # Initialize the model
     if args.model_config_name_or_path is None:
         model = DiT_XL_2(sample_size=args.resolution,in_channels=4,out_channels=4)
@@ -388,17 +435,18 @@ def main(args):
     vae.requires_grad_(False)
     # set the model to train mode
     model.train()
+
+
     # Create EMA for the model.
     if args.use_ema:
-        ema_model = DiT_XL_2(sample_size=args.resolution,in_channels=4,out_channels=4)
         ema_model = EMAModel(
-            ema_model.parameters(),
+            model.parameters(),
             decay=args.ema_max_decay,
             use_ema_warmup=True,
             inv_gamma=args.ema_inv_gamma,
             power=args.ema_power,
-            model_cls=DiT_XL_2,
-            model_config=ema_model.config,
+            model_cls=DiTTransformer2DModel,
+            model_config=model.config,
         )
 
     weight_dtype = torch.float32
@@ -414,6 +462,8 @@ def main(args):
     # The VAE is in float32 to avoid NaN losses.
     vae.to(accelerator.device, dtype=torch.float32)
 
+
+    # acelerate training
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
             import xformers
@@ -426,6 +476,27 @@ def main(args):
             model.enable_xformers_memory_efficient_attention()
         else:
             raise ValueError("xformers is not available. Make sure it is installed correctly")
+
+    if args.gradient_checkpointing:
+        model.enable_gradient_checkpointing()
+
+    # # Enable TF32 for faster training on Ampere GPUs,
+    # # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
+    # if args.allow_tf32:
+    #     torch.backends.cuda.matmul.allow_tf32 = True
+    # # Use 8-bit Adam for lower memory usage or to fine-tune the model in 16GB GPUs
+
+    # if args.use_8bit_adam:
+    #     try:
+    #         import bitsandbytes as bnb
+    #     except ImportError:
+    #         raise ImportError(
+    #             "To use 8-bit Adam, please install the bitsandbytes library: `pip install bitsandbytes`."
+    #         )
+    #     optimizer_class = bnb.optim.AdamW8bit
+
+    # else:
+    #     optimizer_class = torch.optim.AdamW
 
     # Initialize the scheduler
     accepts_prediction_type = "prediction_type" in set(inspect.signature(DDPMScheduler.__init__).parameters.keys())
@@ -457,25 +528,10 @@ def main(args):
     labels_dir = f"{args.dataset_path}/imagenet512_labels"
     dataset = CustomDataset(features_dir, labels_dir)
 
-    # # Preprocessing the datasets and DataLoaders creation.
-    # augmentations = transforms.Compose(
-    #     [
-    #         transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
-    #         transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution),
-    #         transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
-    #         transforms.ToTensor(),
-    #         transforms.Normalize([0.5], [0.5]),
-    #     ]
-    # )
-
-    # def transform_images(examples):
-    #     images = [augmentations(image.convert("RGB")) for image in examples["image"]]
-    #     return {"input": images}
 
     if accelerator.is_main_process:
         logger.info(f"Dataset contains {len(dataset):,} images ({args.dataset_path})")
 
-    # dataset.set_transform(transform_images)
     train_dataloader = torch.utils.data.DataLoader(
         dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=args.dataloader_num_workers
     )
@@ -554,7 +610,10 @@ def main(args):
                     progress_bar.update(1)
                 continue
 
-            clean_images = batch["input"].to(weight_dtype)
+            clean_images = batch["features"].to(weight_dtype)
+            clean_images = clean_images.squeeze(dim=1)
+            class_labels = batch["labels"]
+            class_labels = class_labels.squeeze(dim=1)
             # Sample noise that we'll add to the images
             noise = torch.randn(clean_images.shape, dtype=weight_dtype, device=clean_images.device)
             bsz = clean_images.shape[0]
@@ -569,7 +628,7 @@ def main(args):
 
             with accelerator.accumulate(model):
                 # Predict the noise residual
-                model_output = model(noisy_images, timesteps).sample
+                model_output = model(noisy_images, timesteps, class_labels, return_dict=False)[0]
 
                 if args.prediction_type == "epsilon":
                     loss = F.mse_loss(model_output.float(), noise.float())  # this could have different weights!
@@ -637,38 +696,37 @@ def main(args):
         # Generate sample images for visual inspection
         if accelerator.is_main_process:
             if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
-                unet = accelerator.unwrap_model(model)
+                transforms = accelerator.unwrap_model(model)
 
                 if args.use_ema:
-                    ema_model.store(unet.parameters())
-                    ema_model.copy_to(unet.parameters())
+                    ema_model.store(transforms.parameters())
+                    ema_model.copy_to(transforms.parameters())
 
-                pipeline = DDPMPipeline(
-                    unet=unet,
-                    scheduler=noise_scheduler,
-                )
+                pipeline = DiTPipeline(transformer=transforms, vae=vae, scheduler=noise_scheduler)
 
-                generator = torch.Generator(device=pipeline.device).manual_seed(0)
-                # run pipeline in inference (sample random noise and denoise)
-                images = pipeline(
-                    generator=generator,
-                    batch_size=args.eval_batch_size,
-                    num_inference_steps=args.ddpm_num_inference_steps,
-                    output_type="np",
-                ).images
-
+                # generator = torch.Generator(device=pipeline.device).manual_seed(0)
+                # # run pipeline in inference (sample random noise and denoise)
+                # images = pipeline(
+                #     generator=generator,
+                #     batch_size=args.eval_batch_size,
+                #     num_inference_steps=args.ddpm_num_inference_steps,
+                #     output_type="np",
+                # ).images
+                images_processed=evaluate(args, epoch, pipeline)
                 if args.use_ema:
-                    ema_model.restore(unet.parameters())
+                    ema_model.restore(transforms.parameters())
 
-                # denormalize the images and save to tensorboard
-                images_processed = (images * 255).round().astype("uint8")
+                # # denormalize the images and save to tensorboard
+                # images_processed = (images * 255).round().astype("uint8")
 
                 if args.logger == "tensorboard":
                     if is_accelerate_version(">=", "0.17.0.dev0"):
                         tracker = accelerator.get_tracker("tensorboard", unwrap=True)
                     else:
                         tracker = accelerator.get_tracker("tensorboard")
-                    tracker.add_images("test_samples", images_processed.transpose(0, 3, 1, 2), epoch)
+                    for i in len(images_processed):
+                        tracker.add_image(f"test_samples_{i}", images_processed[i], epoch)
+                    # tracker.add_images("test_samples", images_processed.transpose(0, 3, 1, 2), epoch)
                 elif args.logger == "wandb":
                     # Upcoming `log_images` helper coming in https://github.com/huggingface/accelerate/pull/962/files
                     accelerator.get_tracker("wandb").log(
@@ -678,21 +736,18 @@ def main(args):
 
             if epoch % args.save_model_epochs == 0 or epoch == args.num_epochs - 1:
                 # save the model
-                unet = accelerator.unwrap_model(model)
+                transforms = accelerator.unwrap_model(model)
 
                 if args.use_ema:
-                    ema_model.store(unet.parameters())
-                    ema_model.copy_to(unet.parameters())
+                    ema_model.store(transforms.parameters())
+                    ema_model.copy_to(transforms.parameters())
 
-                pipeline = DDPMPipeline(
-                    unet=unet,
-                    scheduler=noise_scheduler,
-                )
+                pipeline = DiTPipeline(transformer=transforms, vae=vae, scheduler=noise_scheduler)
 
                 pipeline.save_pretrained(args.output_dir)
 
                 if args.use_ema:
-                    ema_model.restore(unet.parameters())
+                    ema_model.restore(transforms.parameters())
 
                 if args.push_to_hub:
                     upload_folder(
