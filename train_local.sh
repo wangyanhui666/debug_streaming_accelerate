@@ -19,3 +19,4 @@ accelerate launch \
     --logger wandb \
     --mixed_precision bf16 \
     --checkpointing_steps 10000 \
+    --resume_from_checkpoint latest \
