@@ -529,8 +529,8 @@ def main(args):
     if accepts_prediction_type:
         noise_scheduler1 = DDPMScheduler(
             num_train_timesteps=args.ddpm_num_steps1,
-            beta_schedule=args.ddpm_beta_schedule1,
-            prediction_type=args.prediction_type1,
+            beta_schedule=args.ddpm_beta_schedule,
+            prediction_type=args.prediction_type,
         )
         noise_scheduler2 = DDPMScheduler(
             num_train_timesteps=args.ddpm_num_steps2,
