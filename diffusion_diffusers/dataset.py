@@ -18,10 +18,19 @@ class CustomDataset(Dataset):
         return len(self.features_files)
 
     def __getitem__(self, idx):
-        feature_file = self.features_files[idx]
-        label_file = self.labels_files[idx]
+        try:
+            feature_file = self.features_files[idx]
+            label_file = self.labels_files[idx]
 
-        features = np.load(os.path.join(self.features_dir, feature_file))
-        labels = np.load(os.path.join(self.labels_dir, label_file))
-        data = {'features': features, 'labels': labels}
+            features = np.load(os.path.join(self.features_dir, feature_file))
+            labels = np.load(os.path.join(self.labels_dir, label_file))
+            data = {'features': features, 'labels': labels}
+        except OSError as e:
+            print(f"Error reading file: {e}")
+            feature_file = self.features_files[0]
+            label_file = self.labels_files[0]
+
+            features = np.load(os.path.join(self.features_dir, feature_file))
+            labels = np.load(os.path.join(self.labels_dir, label_file))
+            data = {'features': features, 'labels': labels}
         return data
