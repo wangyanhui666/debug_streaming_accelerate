@@ -13,10 +13,10 @@ For a simple single-GPU/CPU sampling script, see sample.py.
 """
 import torch
 import torch.distributed as dist
-from models import DiT_models
+from diffusion_diffusers.model import DiT_XL_2
 from download import find_model
 from diffusion import create_diffusion
-from diffusers.models import AutoencoderKL
+from diffusers import DDPMPipeline, DiTPipeline, DDPMScheduler, AutoencoderKL,DiTTransformer2DModel
 from tqdm import tqdm
 import os
 from PIL import Image
@@ -59,33 +59,27 @@ def main(args):
     torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
-    if args.ckpt is None:
-        assert args.model == "DiT-XL/2", "Only DiT-XL/2 models are available for auto-download."
-        assert args.image_size in [256, 512]
-        assert args.num_classes == 1000
+    assert args.ckpt is not None, "Please provide a path to a DiT checkpoint via --ckpt"
 
     # Load model:
     latent_size = args.image_size // 8
-    model = DiT_models[args.model](
-        input_size=latent_size,
-        num_classes=args.num_classes
-    ).to(device)
-    # Auto-download a pre-trained model or load a custom DiT checkpoint from train.py:
-    ckpt_path = args.ckpt or f"DiT-XL-2-{args.image_size}x{args.image_size}.pt"
-    state_dict = find_model(ckpt_path)
-    model.load_state_dict(state_dict)
+    if args.use_ema:
+        model=DiTTransformer2DModel.from_pretrained(args.ckpt, subfolder="transformer_ema")
+    else:
+        model=DiTTransformer2DModel.from_pretrained(args.ckpt, subfolder="transformer")
+    model.to(device)
     model.eval()  # important!
-    diffusion = create_diffusion(str(args.num_sampling_steps))
     vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
+    noise_scheduler = DDPMScheduler()
+    pipeline = DiTPipeline(model, vae, noise_scheduler)
     assert args.cfg_scale >= 1.0, "In almost all cases, cfg_scale be >= 1.0"
     using_cfg = args.cfg_scale > 1.0
 
     # Create folder to save samples:
-    model_string_name = args.model.replace("/", "-")
-    ckpt_string_name = os.path.basename(args.ckpt).replace(".pt", "") if args.ckpt else "pretrained"
-    folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.image_size}-vae-{args.vae}-" \
-                  f"cfg-{args.cfg_scale}-seed-{args.global_seed}"
-    sample_folder_dir = f"{args.sample_dir}/{folder_name}"
+    checkpoint_name = os.path.basename(os.path.normpath(args.ckpt))
+    parent_dir = os.path.dirname(os.path.normpath(args.ckpt))
+    inference_folder_name = f'inference_{checkpoint_name}-image_size-{args.image_size}-cfg-{args.cfg_scale}-seed-{args.global_seed}'
+    sample_folder_dir = os.path.join(parent_dir, inference_folder_name)
     if rank == 0:
         os.makedirs(sample_folder_dir, exist_ok=True)
         print(f"Saving .png samples at {sample_folder_dir}")
@@ -107,34 +101,19 @@ def main(args):
     total = 0
     for _ in pbar:
         # Sample inputs:
-        z = torch.randn(n, model.in_channels, latent_size, latent_size, device=device)
+        
         y = torch.randint(0, args.num_classes, (n,), device=device)
-
-        # Setup classifier-free guidance:
-        if using_cfg:
-            z = torch.cat([z, z], 0)
-            y_null = torch.tensor([1000] * n, device=device)
-            y = torch.cat([y, y_null], 0)
-            model_kwargs = dict(y=y, cfg_scale=args.cfg_scale)
-            sample_fn = model.forward_with_cfg
-        else:
-            model_kwargs = dict(y=y)
-            sample_fn = model.forward
-
-        # Sample images:
-        samples = diffusion.p_sample_loop(
-            sample_fn, z.shape, z, clip_denoised=False, model_kwargs=model_kwargs, progress=False, device=device
-        )
-        if using_cfg:
-            samples, _ = samples.chunk(2, dim=0)  # Remove null class samples
-
-        samples = vae.decode(samples / 0.18215).sample
-        samples = torch.clamp(127.5 * samples + 128.0, 0, 255).permute(0, 2, 3, 1).to("cpu", dtype=torch.uint8).numpy()
-
+        y = y.tolist()
+        images = pipeline(
+            class_labels=y,
+            guidance_scale=1.0,
+            num_inference_steps=250,
+            ).images
+        
         # Save samples to disk as individual .png files
-        for i, sample in enumerate(samples):
+        for i, sample in enumerate(images):
             index = i * dist.get_world_size() + rank + total
-            Image.fromarray(sample).save(f"{sample_folder_dir}/{index:06d}.png")
+            sample.save(f"{sample_folder_dir}/{index:06d}.png")
         total += global_batch_size
 
     # Make sure all processes have finished saving their samples before attempting to convert to .npz
@@ -148,14 +127,15 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
+    # parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
+    parser.add_argument("--use-ema", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--vae",  type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--sample-dir", type=str, default="samples")
     parser.add_argument("--per-proc-batch-size", type=int, default=32)
     parser.add_argument("--num-fid-samples", type=int, default=50_000)
     parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
     parser.add_argument("--num-classes", type=int, default=1000)
-    parser.add_argument("--cfg-scale",  type=float, default=1.5)
+    parser.add_argument("--cfg-scale",  type=float, default=1.0)
     parser.add_argument("--num-sampling-steps", type=int, default=250)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--tf32", action=argparse.BooleanOptionalAction, default=True,
