@@ -15,7 +15,7 @@ accelerate launch \
     --dataloader_num_workers 4 \
     --num_epochs 1000 \
     --save_model_epochs 1 \
-    --output_dir ~/guangtingsc/t2vg/dit/logs/train_imagenet_256/0918_diffdiff_256_test_1 \
+    --output_dir ~/guangtingsc/t2vg/dit/logs/train_imagenet_256/0918_diffdiff_256_1000_1000_test1 \
     --logger wandb \
     --mixed_precision bf16 \
     --checkpointing_steps 10000 \
