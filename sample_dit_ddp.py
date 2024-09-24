@@ -99,6 +99,7 @@ def main(args):
     pbar = range(iterations)
     pbar = tqdm(pbar) if rank == 0 else pbar
     total = 0
+    samples_list = []
     for _ in pbar:
         # Sample inputs:
         
@@ -110,17 +111,39 @@ def main(args):
             num_inference_steps=250,
             ).images
         
-        # Save samples to disk as individual .png files
+        # Save samples to disk as individual .png files and collect sample data
         for i, sample in enumerate(images):
             index = i * dist.get_world_size() + rank + total
             sample.save(f"{sample_folder_dir}/{index:06d}.png")
+            sample_np = np.asarray(sample).astype(np.uint8)
+            samples_list.append(sample_np)
         total += global_batch_size
 
+    # 将本进程的样本保存为 .npz 文件
+    samples_np = np.stack(samples_list)
+    npz_path = f"{sample_folder_dir}/samples_rank_{rank}.npz"
+    np.savez(npz_path, arr_0=samples_np)
+    print(f"Rank {rank}: Saved .npz file to {npz_path} [shape={samples_np.shape}].")
     # Make sure all processes have finished saving their samples before attempting to convert to .npz
     dist.barrier()
+    # if rank == 0:
+    #     create_npz_from_sample_folder(sample_folder_dir, args.num_fid_samples)
+    #     print("Done.")
+    # dist.barrier()
+    # 主进程合并所有 .npz 文件
     if rank == 0:
-        create_npz_from_sample_folder(sample_folder_dir, args.num_fid_samples)
-        print("Done.")
+        print("Merging .npz files from all ranks...")
+        all_samples = []
+        for r in range(dist.get_world_size()):
+            npz_path = f"{sample_folder_dir}/samples_rank_{r}.npz"
+            data = np.load(npz_path)['arr_0']
+            all_samples.append(data)
+        all_samples = np.concatenate(all_samples, axis=0)
+        # 只保留所需数量的样本
+        all_samples = all_samples[:args.num_fid_samples]
+        npz_path = f"{sample_folder_dir}.npz"
+        np.savez(npz_path, arr_0=all_samples)
+        print(f"Saved merged .npz file to {npz_path} [shape={all_samples.shape}].")
     dist.barrier()
     dist.destroy_process_group()
 
