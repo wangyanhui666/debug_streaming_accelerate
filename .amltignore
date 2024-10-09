@@ -1,0 +1,6 @@
+visuals/
+results/
+logs/
+wandb/
+src/
+*.pth

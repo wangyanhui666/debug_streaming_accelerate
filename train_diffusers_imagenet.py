@@ -84,6 +84,9 @@ def evaluate(args, epoch, pipeline):
     test_dir = os.path.join(args.output_dir, "samples")
     os.makedirs(test_dir, exist_ok=True)
     image_grid_3.save(f"{test_dir}/{epoch:04d}_{2}.png")
+    del pipeline
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return [image_grid_1,image_grid_2,image_grid_3]
 
 
@@ -624,7 +627,7 @@ def main(args):
 
             # Add noise to the clean images according to the noise magnitude at each timestep
             # (this is the forward diffusion process)
-            noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
+            noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps).to(dtype=weight_dtype)
 
             with accelerator.accumulate(model):
                 # Predict the noise residual
