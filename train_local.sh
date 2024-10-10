@@ -11,10 +11,10 @@ accelerate launch \
     --use_ema \
     --resolution 32 \
     --train_batch_size=64 \
-    --dataloader_num_workers 4 \
+    --dataloader_num_workers 1 \
     --num_epochs 1000 \
     --save_model_epochs 1 \
-    --output_dir ~/guangtingsc/t2vg/dit/logs/train_imagenet_256/1009_imagenet_int8_test \
+    --output_dir ~/guangtingsc/t2vg/dit/logs/train_imagenet_256/1010_imagenet_int8_test1 \
     --logger wandb \
     --mixed_precision bf16 \
     --checkpointing_steps 10000 \

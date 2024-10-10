@@ -19,7 +19,7 @@ import torch.distributed as dist
 
 from accelerate import Accelerator, InitProcessGroupKwargs
 from accelerate.logging import get_logger
-from accelerate.utils import ProjectConfiguration, set_seed, DataLoaderConfiguration
+from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
@@ -361,7 +361,6 @@ def main(args):
     
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
-    dataloader_config = DataLoaderConfiguration(dispatch_batches=False, split_batches=True)
     kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=7200))  # a big number for high resolution or big dataset
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -369,7 +368,6 @@ def main(args):
         log_with=args.logger,
         project_config=accelerator_project_config,
         kwargs_handlers=[kwargs],
-        dataloader_config=dataloader_config,
     )
     print(f"WORLD_SIZE: {os.getenv('WORLD_SIZE')}")
     print(f"LOCAL_WORLD_SIZE: {os.getenv('LOCAL_WORLD_SIZE')}")
@@ -591,8 +589,8 @@ def main(args):
     )
 
     # Prepare everything with our `accelerator`.
-    model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-        model, optimizer, train_dataloader, lr_scheduler
+    model, optimizer, lr_scheduler = accelerator.prepare(
+        model, optimizer, lr_scheduler
     )
 
     if args.use_ema:
@@ -652,8 +650,9 @@ def main(args):
         progress_bar = tqdm(total=num_update_steps_per_epoch, disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
-            # for key, value in batch.items():
-            #     print(f"Step {step}, Key: {key}, Shape: {value.shape if isinstance(value, torch.Tensor) else type(value)}")
+            # if accelerator.is_main_process:
+            #     for key, value in batch.items():
+            #         print(f"Step {step}, Key: {key}, Shape: {value.shape if isinstance(value, torch.Tensor) else type(value)}")
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
@@ -663,8 +662,7 @@ def main(args):
             # clean_images = clean_images.squeeze(dim=1)
             # class_labels = class_labels.squeeze(dim=1)
             # Sample noise that we'll add to the images
-            clean_latents = batch["vae_output"].reshape(-1, 4, 32, 32).to(weight_dtype)
-            assert device == clean_latents.device
+            clean_latents = batch["vae_output"].reshape(-1, 4, 32, 32).to(weight_dtype).to(device)
             # scale the latents to the correct range
             clean_latents = clean_latents.mul_(vae.config.scaling_factor)
             labels = batch["label"]
@@ -746,7 +744,8 @@ def main(args):
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
         progress_bar.close()
-
+        logs = {"step_per_epoch": step}
+        accelerator.log(logs, step=global_step)
         accelerator.wait_for_everyone()
 
         # Generate sample images for visual inspection
