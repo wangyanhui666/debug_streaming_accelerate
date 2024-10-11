@@ -143,7 +143,7 @@ def parse_args():
         help="The config of the UNet model to train, leave as None to use standard DDPM configuration.",
     )
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
-    parser.add_argument("--vae_path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
+    parser.add_argument("--vae-path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
     parser.add_argument(
         "--train_data_dir",
         type=str,
