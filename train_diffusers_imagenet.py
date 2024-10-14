@@ -6,11 +6,16 @@ import os
 import shutil
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
+import numpy as np
 
 import accelerate
 import datasets
 import torch
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torch.utils.data.dataloader import default_collate
+import torch.distributed as dist
 
 from accelerate import Accelerator, InitProcessGroupKwargs
 from accelerate.logging import get_logger
@@ -18,7 +23,6 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
 from huggingface_hub import create_repo, upload_folder
 from packaging import version
-from torchvision import transforms
 from tqdm.auto import tqdm
 
 import diffusers
@@ -31,6 +35,10 @@ from diffusers.utils.import_utils import is_xformers_available
 from diffusion_diffusers.model import DiT_XL_2
 from diffusion_diffusers.dataset import CustomDataset
 
+import streaming.base.util as util
+from streaming import StreamingDataset
+from streaming import LocalDataset
+from streaming.base.format.mds.encodings import Encoding, _encodings
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 # check_min_version("0.31.0.dev0")
 
@@ -84,6 +92,9 @@ def evaluate(args, epoch, pipeline):
     test_dir = os.path.join(args.output_dir, "samples")
     os.makedirs(test_dir, exist_ok=True)
     image_grid_3.save(f"{test_dir}/{epoch:04d}_{2}.png")
+    del pipeline
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     return [image_grid_1,image_grid_2,image_grid_3]
 
 
@@ -105,9 +116,19 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
     return res.expand(broadcast_shape)
 
 
+class uint8(Encoding):
+    def encode(self, obj: Any) -> bytes:
+        return obj.tobytes()
+
+    def decode(self, data: bytes) -> Any:
+        x=  np.frombuffer(data, np.uint8).astype(np.float32)
+        return (x / 255.0 - 0.5) * 28
+
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
-    parser.add_argument("--dataset-path", type=str, default=None, help="Path to the dataset")
+    parser.add_argument("--local-dataset-path", type=str, default=None, help="Path to the local dataset")
 
     parser.add_argument(
         "--dataset_config_name",
@@ -122,7 +143,7 @@ def parse_args():
         help="The config of the UNet model to train, leave as None to use standard DDPM configuration.",
     )
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
-    parser.add_argument("--vae_path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
+    parser.add_argument("--vae-path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
     parser.add_argument(
         "--train_data_dir",
         type=str,
@@ -326,16 +347,20 @@ def parse_args():
     if env_local_rank != -1 and env_local_rank != args.local_rank:
         args.local_rank = env_local_rank
 
-    if args.dataset_path is None and args.train_data_dir is None:
+    if args.local_dataset_path is None and args.train_data_dir is None:
         raise ValueError("You must specify either a dataset name from the hub or a train data directory.")
 
     return args
 
 
 def main(args):
+    dist.init_process_group("nccl")
+    rank = dist.get_rank()
+    _encodings["uint8"] = uint8
+    util.clean_stale_shared_memory()
+    
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
-
     kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=7200))  # a big number for high resolution or big dataset
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
@@ -344,7 +369,11 @@ def main(args):
         project_config=accelerator_project_config,
         kwargs_handlers=[kwargs],
     )
-
+    print(f"WORLD_SIZE: {os.getenv('WORLD_SIZE')}")
+    print(f"LOCAL_WORLD_SIZE: {os.getenv('LOCAL_WORLD_SIZE')}")
+    print(f"RANK: {os.getenv('RANK')}")
+    print(f"MASTER_ADDR: {os.getenv('MASTER_ADDR')}")
+    print(f"MASTER_PORT: {os.getenv('MASTER_PORT')}")
     if args.logger == "tensorboard":
         if not is_tensorboard_available():
             raise ImportError("Make sure to install tensorboard if you want to use it for logging during training.")
@@ -524,18 +553,33 @@ def main(args):
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
     # Setup data:
-    features_dir = f"{args.dataset_path}/imagenet512_features"
-    labels_dir = f"{args.dataset_path}/imagenet512_labels"
-    dataset = CustomDataset(features_dir, labels_dir)
-
-
-    if accelerator.is_main_process:
-        logger.info(f"Dataset contains {len(dataset):,} images ({args.dataset_path})")
-
-    train_dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=args.dataloader_num_workers
+    # features_dir = f"{args.dataset_path}/imagenet512_features"
+    # labels_dir = f"{args.dataset_path}/imagenet512_labels"
+    # dataset = CustomDataset(features_dir, labels_dir)
+    train_dataset = StreamingDataset(
+        local=args.local_dataset_path,
+        split=None,
+        shuffle=True,
+        shuffle_algo="naive",
+        num_canonical_nodes=1,
+        batch_size = args.train_batch_size,
     )
 
+    if accelerator.is_main_process:
+        logger.info(f"Dataset contains {len(train_dataset):,} images ({args.local_dataset_path})")
+    # def collate_fn(batch):
+    #     # 确保所有标签都是张量，并且至少是一维的
+    #     for data in batch:
+    #         if isinstance(data['label'], str):
+    #             data['label'] = torch.tensor([int(data['label'])])  # 转换为整数并确保是一维张量
+    #         elif isinstance(data['label'], torch.Tensor) and data['label'].dim() == 0:
+    #             data['label'] = data['label'].unsqueeze(0)  # 如果是零维张量，扩展为一维
+        
+    #     # 使用默认的 collate 函数进行合并
+    #     return default_collate(batch)
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=args.train_batch_size,
+    )
     # Initialize the learning rate scheduler
     lr_scheduler = get_scheduler(
         args.lr_scheduler,
@@ -545,8 +589,8 @@ def main(args):
     )
 
     # Prepare everything with our `accelerator`.
-    model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-        model, optimizer, train_dataloader, lr_scheduler
+    model, optimizer, lr_scheduler = accelerator.prepare(
+        model, optimizer, lr_scheduler
     )
 
     if args.use_ema:
@@ -557,13 +601,14 @@ def main(args):
     if accelerator.is_main_process:
         run = os.path.split(__file__)[-1].split(".")[0]
         accelerator.init_trackers(run)
+    accelerator.wait_for_everyone()  # 等待其他进程同步
 
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
     max_train_steps = args.num_epochs * num_update_steps_per_epoch
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(dataset)}")
+    logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {args.num_epochs}")
     logger.info(f"  Instantaneous batch size per device = {args.train_batch_size}")
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
@@ -599,46 +644,56 @@ def main(args):
             resume_step = resume_global_step % (num_update_steps_per_epoch * args.gradient_accumulation_steps)
 
     # Train!
+    device = accelerator.device
     for epoch in range(first_epoch, args.num_epochs):
         model.train()
         progress_bar = tqdm(total=num_update_steps_per_epoch, disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
+            
+            # if accelerator.is_main_process:
+            #     for key, value in batch.items():
+            #         print(f"Step {step}, Key: {key}, Shape: {value.shape if isinstance(value, torch.Tensor) else type(value)}")
             # Skip steps until we reach the resumed step
             if args.resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-
-            clean_images = batch["features"].to(weight_dtype)
-            clean_images = clean_images.squeeze(dim=1)
-            class_labels = batch["labels"]
-            class_labels = class_labels.squeeze(dim=1)
+            # clean_images = batch["features"].to(weight_dtype)
+            # clean_images = clean_images.squeeze(dim=1)
+            # class_labels = class_labels.squeeze(dim=1)
             # Sample noise that we'll add to the images
-            noise = torch.randn(clean_images.shape, dtype=weight_dtype, device=clean_images.device)
-            bsz = clean_images.shape[0]
+            clean_latents = batch["vae_output"].reshape(-1, 4, 32, 32).to(weight_dtype).to(device)
+            # scale the latents to the correct range
+            clean_latents = clean_latents.mul_(vae.config.scaling_factor)
+            labels = batch["label"]
+            labels = list(map(int, labels))
+            labels = torch.tensor(labels,dtype=torch.long,device=device)
+
+            noise = torch.randn(clean_latents.shape, dtype=weight_dtype, device=device)
+            bsz = clean_latents.shape[0]
             # Sample a random timestep for each image
             timesteps = torch.randint(
-                0, noise_scheduler.config.num_train_timesteps, (bsz,), device=clean_images.device
+                0, noise_scheduler.config.num_train_timesteps, (bsz,), device=device
             ).long()
 
             # Add noise to the clean images according to the noise magnitude at each timestep
             # (this is the forward diffusion process)
-            noisy_images = noise_scheduler.add_noise(clean_images, noise, timesteps)
+            noisy_images = noise_scheduler.add_noise(clean_latents, noise, timesteps).to(dtype=weight_dtype)
 
             with accelerator.accumulate(model):
                 # Predict the noise residual
-                model_output = model(noisy_images, timesteps, class_labels, return_dict=False)[0]
+                model_output = model(noisy_images, timesteps, labels, return_dict=False)[0]
 
                 if args.prediction_type == "epsilon":
                     loss = F.mse_loss(model_output.float(), noise.float())  # this could have different weights!
                 elif args.prediction_type == "sample":
                     alpha_t = _extract_into_tensor(
-                        noise_scheduler.alphas_cumprod, timesteps, (clean_images.shape[0], 1, 1, 1)
+                        noise_scheduler.alphas_cumprod, timesteps, (clean_latents.shape[0], 1, 1, 1)
                     )
                     snr_weights = alpha_t / (1 - alpha_t)
                     # use SNR weighting from distillation paper
-                    loss = snr_weights * F.mse_loss(model_output.float(), clean_images.float(), reduction="none")
+                    loss = snr_weights * F.mse_loss(model_output.float(), clean_latents.float(), reduction="none")
                     loss = loss.mean()
                 else:
                     raise ValueError(f"Unsupported prediction type: {args.prediction_type}")
@@ -689,13 +744,16 @@ def main(args):
                 logs["ema_decay"] = ema_model.cur_decay_value
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
+            break
         progress_bar.close()
-
+        logs = {"step_per_epoch": step}
+        accelerator.log(logs, step=global_step)
         accelerator.wait_for_everyone()
 
         # Generate sample images for visual inspection
         if accelerator.is_main_process:
-            if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
+            if True:
+            # if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
                 transforms = accelerator.unwrap_model(model)
 
                 if args.use_ema:
@@ -724,7 +782,7 @@ def main(args):
                         tracker = accelerator.get_tracker("tensorboard", unwrap=True)
                     else:
                         tracker = accelerator.get_tracker("tensorboard")
-                    for i in len(images_processed):
+                    for i in range(len(images_processed)):
                         tracker.add_image(f"test_samples_{i}", images_processed[i], epoch)
                     # tracker.add_images("test_samples", images_processed.transpose(0, 3, 1, 2), epoch)
                 elif args.logger == "wandb":

@@ -69,15 +69,9 @@ def main(args):
         model=DiTTransformer2DModel.from_pretrained(args.ckpt, subfolder="transformer")
     model.to(device)
     model.eval()  # important!
-    vae = AutoencoderKL.from_pretrained(args.vae_path).to(device)
-    noise_scheduler = DDPMScheduler(clip_sample=False)
-    if args.dtype == "fp32":
-        dtype = torch.float32
-    elif args.dtype == "fp16":
-        dtype = torch.float16
-    elif args.dtype == "bf16":
-        dtype = torch.bfloat16
-    pipeline = DiTPipeline(model, vae, noise_scheduler).to(dtype=dtype)
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
+    noise_scheduler = DDPMScheduler()
+    pipeline = DiTPipeline(model, vae, noise_scheduler)
     assert args.cfg_scale >= 1.0, "In almost all cases, cfg_scale be >= 1.0"
     using_cfg = args.cfg_scale > 1.0
 
@@ -158,8 +152,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--use-ema", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--vae-path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
-    parser.add_argument("--dtype", type=str, choices=["fp32", "fp16", "bf16"], default="fp32")  
+    parser.add_argument("--vae",  type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--sample-dir", type=str, default="samples")
     parser.add_argument("--per-proc-batch-size", type=int, default=32)
     parser.add_argument("--num-fid-samples", type=int, default=50_000)

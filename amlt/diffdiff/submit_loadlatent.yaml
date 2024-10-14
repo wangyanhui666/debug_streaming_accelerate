@@ -1,0 +1,76 @@
+description: DEBUG-YANHUI
+
+target:
+  service: sing
+  name: msroctovc
+  workspace_name: t2vgws2
+
+environment:
+  # amlt cache base-image
+  # image: amlt-sing/acpt-2.2.1-py3.10-cuda12.1
+  image: deeptimhe/ubuntu22.04-cuda12.1-python3.10-pytorch2.2:orig-sing-0610-simpler
+  registry: docker.io
+  setup:
+  - python -m pip install --upgrade pip
+  
+storage:
+  guangtingsc_t2vg:
+      storage_account_name: guangtingsc
+      container_name: t2vg
+  t2vgusw2_videos:
+    storage_account_name: t2vgusw2
+    container_name: videos
+
+code:
+  local_dir: $CONFIG_DIR/../../
+  
+
+jobs:
+- name: 20240924-Train-DiffDiff-Imagenet-256x256px-loadlatent-4x8A100-test-1
+  sku: 4x40G8-A100-IB-NvLink # [G8, 80G4-A100] `amlt target list sing --verbose` to specify the series
+  process_count_per_node: 1
+  mpi: true
+  execution_mode: Basic
+  priority: High # [High, Medium, Low]. On AMLK8s, the priority value is mapped to 200, 100, and 80, respectively.
+  sla_tier: premium               # [premium, standard, basic]
+  identity: managed
+  submit_args:
+    # env:
+    #   AMLT_DOCKERFILE_TEMPLATE: default
+    #   SHARED_MEMORY_PERCENT: 16
+    container_args:
+      shm_size: 8192g
+  command:
+    # Read the environment variables
+    - export $$(grep -v '^#' .env | xargs)
+    - nvidia-smi
+    - pip list
+
+    # # Clone code
+    # - echo "Cloning code"
+    # - export GITHUB_KEY=$$(cat accounts/github.txt)
+    # - mkdir -p /tmp/code
+    # - cd /tmp/code
+    # - git clone -b dev-ry https://$${GITHUB_KEY}@github.com/TiankaiHang/sd3-ft
+    # - cd /tmp/code/sd3-ft
+    # - set -x  # Print commands after code clone
+
+    # Package installation
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install -r requirements.txt
+    - pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu121
+
+    - echo "Package installation done"
+    - pip list
+    - pwd
+    - ls
+    - echo "Start running the code"
+
+    # Here start the code
+    # - bash scripts/tools/Run_extract_latent_video.sh 16 4
+    - bash scripts/sd3/submit_scripts/Run_loadlatent_ShutterStock5M_512px_logitnormal_m1s1_48frames_4x8A100_bs2.sh
+
+    # Finish the code
+    - echo "End of the code"
+    # - sleep infinity

@@ -5,3 +5,5 @@ tensorboard
 datasets[vision]
 matplotlib
 wandb
+hf_transfer
+mosaicml-streaming
