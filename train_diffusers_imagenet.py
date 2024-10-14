@@ -650,6 +650,7 @@ def main(args):
         progress_bar = tqdm(total=num_update_steps_per_epoch, disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
+            
             # if accelerator.is_main_process:
             #     for key, value in batch.items():
             #         print(f"Step {step}, Key: {key}, Shape: {value.shape if isinstance(value, torch.Tensor) else type(value)}")
@@ -743,6 +744,7 @@ def main(args):
                 logs["ema_decay"] = ema_model.cur_decay_value
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
+            break
         progress_bar.close()
         logs = {"step_per_epoch": step}
         accelerator.log(logs, step=global_step)
@@ -750,7 +752,8 @@ def main(args):
 
         # Generate sample images for visual inspection
         if accelerator.is_main_process:
-            if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
+            if True:
+            # if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
                 transforms = accelerator.unwrap_model(model)
 
                 if args.use_ema:
@@ -779,7 +782,7 @@ def main(args):
                         tracker = accelerator.get_tracker("tensorboard", unwrap=True)
                     else:
                         tracker = accelerator.get_tracker("tensorboard")
-                    for i in len(images_processed):
+                    for i in range(len(images_processed)):
                         tracker.add_image(f"test_samples_{i}", images_processed[i], epoch)
                     # tracker.add_images("test_samples", images_processed.transpose(0, 3, 1, 2), epoch)
                 elif args.logger == "wandb":

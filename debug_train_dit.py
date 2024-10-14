@@ -94,11 +94,9 @@ if __name__=="__main__":
     torch.manual_seed(33)
     scheduler_config = DiTPipeline.from_pretrained("facebook/DiT-XL-2-256").scheduler.config
     # noise_scheduler = DDPMScheduler.from_config(scheduler_config)
-    noise_scheduler=DDPMScheduler(clip_sample=False)
-    print(noise_scheduler.config)
-    # pipe = DiTPipeline.from_pretrained("facebook/DiT-XL-2-256", torch_dtype=torch.float16)
-    # pipe.scheduler = DDPMScheduler.from_config(pipe.scheduler.config)
-    # pipe=pipe.to("cuda")
+    pipe = DiTPipeline.from_pretrained("facebook/DiT-XL-2-256", torch_dtype=torch.float16)
+    pipe.scheduler = DDPMScheduler(clip_sample=False)
+    pipe=pipe.to("cuda")
     device = "cuda"
     # model=Transformer2DModel.from_pretrained("facebook/DiT-XL-2-256", subfolder="transformer")
     # model=DiTTransformer2DModel.from_pretrained("facebook/DiT-XL-2-256", subfolder="transformer")
@@ -106,11 +104,11 @@ if __name__=="__main__":
     model=DiTTransformer2DModel.from_pretrained("/home/t2vg-a100-G4-40/guangtingsc/t2vg/dit/logs/train_imagenet_256/0905_dit_256_test_memory_1/checkpoint-400000",subfolder="transformer_ema")
     print(model.config)
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
-    pipe = DiTPipeline(model, vae, noise_scheduler).to(torch.bfloat16)
+    # pipe = DiTPipeline(model, vae, noise_scheduler).to(torch.bfloat16)
     pipe.to(device)
     generator=torch.Generator(device=device).manual_seed(33)
     output = pipe(class_labels=[0,0,0,0], num_inference_steps=50, guidance_scale=1.0, generator=generator)
-    save_dir = "./results/dit_samples_dittransformer2d_ddpm_bf16_ditvae"
+    save_dir = "./results/official_dit_samples_usemy_scheduler_float16"
     os.makedirs(save_dir,exist_ok=True)
     for i in range(len(output.images)):
         output.images[i].save(f"{save_dir}/{i}.png")
