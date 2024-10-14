@@ -388,16 +388,18 @@ def main(args):
                 ema_model2.to(accelerator.device)
                 del load_model1
                 del load_model2
-
+            
+            index=1
             for i in range(len(models)):
                 # pop models so that they are not loaded again
-                model = models.pop()
+                model = models.pop(0)
 
                 # load diffusers style into model
-                load_model = DiTTransformer2DModel.from_pretrained(input_dir, subfolder=f"transformer{i+1}")
+                load_model = DiTTransformer2DModel.from_pretrained(input_dir, subfolder=f"transformer{index}")
                 model.register_to_config(**load_model.config)
 
                 model.load_state_dict(load_model.state_dict())
+                index+=1
                 del load_model
 
         accelerator.register_save_state_pre_hook(save_model_hook)
