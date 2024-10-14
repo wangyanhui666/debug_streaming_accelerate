@@ -354,8 +354,8 @@ def parse_args():
 
 
 def main(args):
-    dist.init_process_group("nccl")
-    rank = dist.get_rank()
+    # dist.init_process_group("nccl")
+    # rank = dist.get_rank()
     _encodings["uint8"] = uint8
     util.clean_stale_shared_memory()
     
@@ -534,9 +534,10 @@ def main(args):
             num_train_timesteps=args.ddpm_num_steps,
             beta_schedule=args.ddpm_beta_schedule,
             prediction_type=args.prediction_type,
+            clip_sample=False,
         )
     else:
-        noise_scheduler = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps, beta_schedule=args.ddpm_beta_schedule)
+        noise_scheduler = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps, beta_schedule=args.ddpm_beta_schedule,clip_sample=False)
 
     # Initialize the optimizer
     optimizer = torch.optim.AdamW(
@@ -744,7 +745,6 @@ def main(args):
                 logs["ema_decay"] = ema_model.cur_decay_value
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
-            break
         progress_bar.close()
         logs = {"step_per_epoch": step}
         accelerator.log(logs, step=global_step)
@@ -752,10 +752,9 @@ def main(args):
 
         # Generate sample images for visual inspection
         if accelerator.is_main_process:
-            if True:
-            # if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
+            if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
                 transforms = accelerator.unwrap_model(model)
-
+                transforms.eval() # set to eval mode for sampling
                 if args.use_ema:
                     ema_model.store(transforms.parameters())
                     ema_model.copy_to(transforms.parameters())
