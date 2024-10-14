@@ -84,7 +84,7 @@ def main(args):
     # Create folder to save samples:
     checkpoint_name = os.path.basename(os.path.normpath(args.ckpt))
     parent_dir = os.path.dirname(os.path.normpath(args.ckpt))
-    inference_folder_name = f'inference_{checkpoint_name}-ema-{args.use_ema}-image_size-{args.image_size}-cfg-{args.cfg_scale}-seed-{args.global_seed}'
+    inference_folder_name = f'inference_{checkpoint_name}-ema-{args.use_ema}-image_size-{args.image_size}-cfg-{args.cfg_scale}-dtype-{args.dtype}-seed-{args.global_seed}'
     sample_folder_dir = os.path.join(parent_dir, inference_folder_name)
     if rank == 0:
         os.makedirs(sample_folder_dir, exist_ok=True)
