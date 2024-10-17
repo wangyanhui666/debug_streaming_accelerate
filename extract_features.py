@@ -133,7 +133,7 @@ def main(args):
     assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
     latent_size = args.image_size // 8
     print("load vae..")
-    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
+    vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device).eval()
 
     # Setup data:
     print("setup data..")
@@ -168,7 +168,7 @@ def main(args):
         y = y.to(device)
         with torch.no_grad():
             # Map input images to latent space + normalize latents:
-            x = vae.encode(x).latent_dist.sample().mul_(0.18215)
+            x = vae.encode(x).latent_dist.sample().mul_(vae.scaling_factor)
             
         x = x.detach().cpu().numpy()    # (1, 4, 32, 32)
         train_steps_dist=train_steps*dist.get_world_size()+rank

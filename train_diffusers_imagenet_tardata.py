@@ -554,17 +554,16 @@ def main(args):
     # In distributed training, the load_dataset function guarantees that only one local process can concurrently
     # download the dataset.
     # Setup data:
-    # features_dir = f"{args.dataset_path}/imagenet512_features"
-    # labels_dir = f"{args.dataset_path}/imagenet512_labels"
-    # dataset = CustomDataset(features_dir, labels_dir)
-    train_dataset = StreamingDataset(
-        local=args.local_dataset_path,
-        split=None,
-        shuffle=True,
-        shuffle_algo="naive",
-        num_canonical_nodes=1,
-        batch_size = args.train_batch_size,
-    )
+    
+    train_dataset = CustomDataset(features_dir=args.local_dataset_path)
+    # train_dataset = StreamingDataset(
+    #     local=args.local_dataset_path,
+    #     split=None,
+    #     shuffle=True,
+    #     shuffle_algo="naive",
+    #     num_canonical_nodes=1,
+    #     batch_size = args.train_batch_size,
+    # )
 
     if accelerator.is_main_process:
         logger.info(f"Dataset contains {len(train_dataset):,} images ({args.local_dataset_path})")
@@ -579,7 +578,12 @@ def main(args):
     #     # 使用默认的 collate 函数进行合并
     #     return default_collate(batch)
     train_dataloader = DataLoader(
-        train_dataset, batch_size=args.train_batch_size,
+        train_dataset, 
+        batch_size=args.train_batch_size,
+        shuffle=True,
+        num_workers=args.dataloader_num_workers,
+        pin_memory=True,
+        drop_last=True
     )
     # Initialize the learning rate scheduler
     lr_scheduler = get_scheduler(
@@ -590,8 +594,8 @@ def main(args):
     )
 
     # Prepare everything with our `accelerator`.
-    model, optimizer, lr_scheduler = accelerator.prepare(
-        model, optimizer, lr_scheduler
+    model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, lr_scheduler
     )
 
     if args.use_ema:
@@ -664,12 +668,9 @@ def main(args):
             # clean_images = clean_images.squeeze(dim=1)
             # class_labels = class_labels.squeeze(dim=1)
             # Sample noise that we'll add to the images
-            clean_latents = batch["vae_output"].reshape(-1, 4, 32, 32).to(weight_dtype).to(device)
+            clean_latents = batch["features"]
+            labels = batch["labels"]
             # scale the latents to the correct range
-            clean_latents = clean_latents.mul_(vae.config.scaling_factor)
-            labels = batch["label"]
-            labels = list(map(int, labels))
-            labels = torch.tensor(labels,dtype=torch.long,device=device)
 
             noise = torch.randn(clean_latents.shape, dtype=weight_dtype, device=device)
             bsz = clean_latents.shape[0]
@@ -794,7 +795,6 @@ def main(args):
             if epoch % args.save_model_epochs == 0 or epoch == args.num_epochs - 1:
                 # save the model
                 transforms = accelerator.unwrap_model(model)
-
                 if args.use_ema:
                     ema_model.store(transforms.parameters())
                     ema_model.copy_to(transforms.parameters())

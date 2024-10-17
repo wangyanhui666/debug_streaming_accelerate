@@ -129,7 +129,7 @@ def parse_args():
         help="The config of the UNet model to train, leave as None to use standard DDPM configuration.",
     )
     parser.add_argument("--vae", type=str, choices=["ema", "mse"], default="ema")  # Choice doesn't affect training
-    parser.add_argument("--vae_path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
+    parser.add_argument("--vae-path", type=str, default="stabilityai/sd-vae-ft-ema", help="Path to the VAE model.")
     parser.add_argument(
         "--train_data_dir",
         type=str,
@@ -533,15 +533,17 @@ def main(args):
             num_train_timesteps=args.ddpm_num_steps1,
             beta_schedule=args.ddpm_beta_schedule,
             prediction_type=args.prediction_type,
+            clip_sample=False,
         )
         noise_scheduler2 = DDPMScheduler(
             num_train_timesteps=args.ddpm_num_steps2,
             beta_schedule=args.ddpm_beta_schedule,
             prediction_type=args.prediction_type,
+            clip_sample=False,
         )
     else:
-        noise_scheduler1 = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps1, beta_schedule=args.ddpm_beta_schedule)
-        noise_scheduler2 = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps2, beta_schedule=args.ddpm_beta_schedule)
+        noise_scheduler1 = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps1, beta_schedule=args.ddpm_beta_schedule,clip_sample=False,)
+        noise_scheduler2 = DDPMScheduler(num_train_timesteps=args.ddpm_num_steps2, beta_schedule=args.ddpm_beta_schedule,clip_sample=False,)
     # Initialize the optimizer
     optimizer = torch.optim.AdamW(
         [{'params': model1.parameters()},
@@ -744,8 +746,8 @@ def main(args):
             if epoch % args.save_images_epochs == 0 or epoch == args.num_epochs - 1:
                 transformer1 = accelerator.unwrap_model(model1)
                 transformer2 = accelerator.unwrap_model(model2)
-
-
+                transformer1.eval()
+                transformer2.eval()
                 if args.use_ema:
                     ema_model1.store(transformer1.parameters())
                     ema_model2.store(transformer2.parameters())
