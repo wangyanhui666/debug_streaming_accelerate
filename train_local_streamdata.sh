@@ -15,7 +15,7 @@ accelerate launch \
     --dataloader_num_workers 1 \
     --num_epochs 1000 \
     --save_model_epochs 40000 \
-    --output_dir ~/guangtingsc/t2vg/dit/logs/debug_imagenet_256/1018_imagenet_fp32_fix_flip \
+    --output_dir ~/guangtingsc/t2vg/dit/logs/train_imagenet_256/1018_imagenet_fp32_fix_flip_writedatabug_2 \
     --logger wandb \
     --mixed_precision bf16 \
     --checkpointing_steps 40000 \
