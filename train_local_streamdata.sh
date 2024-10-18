@@ -6,7 +6,7 @@ export WANDB_API_KEY="local-9fd3e86800565dfa4b2a5592ccfaf45ef59ec0c6"
 wandb login local-9fd3e86800565dfa4b2a5592ccfaf45ef59ec0c6 --relogin --host=https://microsoft-research.wandb.io
 accelerate launch \
     --config_file /home/t2vg-a100-G4-40/code/github/DiT/config/default_config.yaml \
-    train_diffusers_imagenet_steamdata.py \
+    train_diffusers_imagenet_streamdata.py \
     --local-dataset-path ~/datasets/vae_mds_fp32 \
     --vae-path stabilityai/sd-vae-ft-mse \
     --use_ema \
