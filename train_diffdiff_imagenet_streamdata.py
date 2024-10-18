@@ -14,7 +14,7 @@ import datasets
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-
+import torch.distributed as dist
 
 from accelerate import Accelerator, InitProcessGroupKwargs
 from accelerate.logging import get_logger
@@ -358,9 +358,25 @@ def parse_args():
 
     return args
 
+# def setup(rank, world_size):
+#     # 设置当前进程的 GPU 设备
+#     torch.cuda.set_device(rank)
+    
+#     # 初始化进程组，使用 NCCL 后端进行 GPU 通信
+#     dist.init_process_group(
+#         backend="nccl",                      # 使用 NCCL 进行 GPU 通信
+#         init_method="tcp://localhost:12355",  # TCP 地址和端口用于进程间的通信
+#         rank=rank,                            # 当前进程的 rank
+#         world_size=world_size                 # 总进程数
+#     )
 
 def main(args):
+    # TODO not sure if this is needed
+    dist.init_process_group(backend='nccl')
+    torch.cuda.set_device(args.local_rank)
 
+
+    
     _encodings["np32"] = np32
     util.clean_stale_shared_memory()
     logging_dir = os.path.join(args.output_dir, args.logging_dir)

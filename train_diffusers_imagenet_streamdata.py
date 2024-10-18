@@ -353,7 +353,8 @@ def parse_args():
 
 
 def main(args):
-
+    dist.init_process_group("nccl")
+    rank = dist.get_rank()
     _encodings["np32"] = np32
     util.clean_stale_shared_memory()
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
