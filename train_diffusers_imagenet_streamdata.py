@@ -121,7 +121,7 @@ class np32(Encoding):
         return obj.tobytes()
 
     def decode(self, data: bytes) -> Any:
-        return np.frombuffer(data, np.float32)
+        return np.frombuffer(data, np.float32).copy()
 
 
 
