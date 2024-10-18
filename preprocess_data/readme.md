@@ -1,7 +1,3 @@
-Here's a cleaned-up and formatted version of your `README.md`:
-
----
-
 # Extract ImageNet VAE Features and Upload to Hugging Face
 
 This guide walks through the process of extracting ImageNet VAE features, merging the files from distributed scripts, and uploading the dataset to Hugging Face.
