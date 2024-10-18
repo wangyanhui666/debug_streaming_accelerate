@@ -33,7 +33,7 @@ Once the dataset is prepared, you can upload it to Hugging Face. Follow the inst
 To upload the current directory as the root of your Hugging Face repo, run the following command:
 
 ```bash
-huggingface-cli upload my-cool-model . .
+huggingface-cli upload wangyanhui666/imagenet_vae_mds_fp32 . --repo-type dataset
 ```
 
 ## 4. Download Dataset from Hugging Face
@@ -55,5 +55,5 @@ export HF_HUB_ENABLE_HF_TRANSFER=True
 3. Download the dataset from Hugging Face:
 
 ```bash
-huggingface-cli download --repo-type dataset wangyanhui666/imagenet_vae_mds_fp32 --local-dir ./vae_mds_fp32
+huggingface-cli download wangyanhui666/imagenet_vae_mds_fp32 --repo-type dataset --local-dir ./vae_mds_fp32
 ```

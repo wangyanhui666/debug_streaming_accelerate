@@ -121,7 +121,7 @@ class np32(Encoding):
         return obj.tobytes()
 
     def decode(self, data: bytes) -> Any:
-        return np.frombuffer(data, np.float32)
+        return np.frombuffer(data, np.float32).copy()
 
 
 
@@ -353,11 +353,9 @@ def parse_args():
 
 
 def main(args):
-    # dist.init_process_group("nccl")
-    # rank = dist.get_rank()
+
     _encodings["np32"] = np32
     util.clean_stale_shared_memory()
-    
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
     accelerator_project_config = ProjectConfiguration(project_dir=args.output_dir, logging_dir=logging_dir)
     kwargs = InitProcessGroupKwargs(timeout=timedelta(seconds=7200))  # a big number for high resolution or big dataset
@@ -567,16 +565,7 @@ def main(args):
 
     if accelerator.is_main_process:
         logger.info(f"Dataset contains {len(train_dataset):,} images ({args.local_dataset_path})")
-    # def collate_fn(batch):
-    #     # 确保所有标签都是张量，并且至少是一维的
-    #     for data in batch:
-    #         if isinstance(data['label'], str):
-    #             data['label'] = torch.tensor([int(data['label'])])  # 转换为整数并确保是一维张量
-    #         elif isinstance(data['label'], torch.Tensor) and data['label'].dim() == 0:
-    #             data['label'] = data['label'].unsqueeze(0)  # 如果是零维张量，扩展为一维
-        
-    #     # 使用默认的 collate 函数进行合并
-    #     return default_collate(batch)
+
     train_dataloader = DataLoader(
         train_dataset, batch_size=args.train_batch_size,
     )
@@ -650,7 +639,6 @@ def main(args):
         progress_bar = tqdm(total=num_update_steps_per_epoch, disable=not accelerator.is_local_main_process)
         progress_bar.set_description(f"Epoch {epoch}")
         for step, batch in enumerate(train_dataloader):
-            
             # if accelerator.is_main_process:
             #     for key, value in batch.items():
             #         print(f"Step {step}, Key: {key}, Shape: {value.shape if isinstance(value, torch.Tensor) else type(value)}")
@@ -659,10 +647,7 @@ def main(args):
                 if step % args.gradient_accumulation_steps == 0:
                     progress_bar.update(1)
                 continue
-            # clean_images = batch["features"].to(weight_dtype)
-            # clean_images = clean_images.squeeze(dim=1)
-            # class_labels = class_labels.squeeze(dim=1)
-            # Sample noise that we'll add to the images
+            
             clean_latents = batch["vae_output"].reshape(-1, 4, 32, 32).to(weight_dtype).to(device)
             # scale the latents to the correct range
             clean_latents = clean_latents.mul_(vae.config.scaling_factor)
