@@ -116,13 +116,12 @@ def _extract_into_tensor(arr, timesteps, broadcast_shape):
     return res.expand(broadcast_shape)
 
 
-class uint8(Encoding):
+class np32(Encoding):
     def encode(self, obj: Any) -> bytes:
         return obj.tobytes()
 
     def decode(self, data: bytes) -> Any:
-        x=  np.frombuffer(data, np.uint8).astype(np.float32)
-        return (x / 255.0 - 0.5) * 28
+        return np.frombuffer(data, np.float32)
 
 
 
