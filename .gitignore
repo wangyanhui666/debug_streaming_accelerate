@@ -112,4 +112,4 @@ debug_model.txt
 debug.ipynb
 .amltconfig
 *.swp
-vae_mds*
+vae_mds_fp32/

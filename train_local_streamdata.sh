@@ -10,7 +10,7 @@ export NCCL_SOCKET_IFNAME=eth0
 accelerate launch \
     --config_file ./config/default_config.yaml \
     train_diffusers_imagenet_streamdata.py \
-    --local-dataset-path ~/datasets/vae_mds_fp32 \
+    --local-dataset-path ./vae_mds_fp32 \
     --vae-path stabilityai/sd-vae-ft-mse \
     --use_ema \
     --resolution 32 \
@@ -18,7 +18,7 @@ accelerate launch \
     --dataloader_num_workers 1 \
     --num_epochs 1000 \
     --save_model_epochs 40000 \
-    --output_dir ./debug_ckptdir \
+    --output_dir ./logs \
     --logger tensorboard \
     --mixed_precision bf16 \
     --checkpointing_steps 40000 \

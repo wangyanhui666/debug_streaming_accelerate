@@ -22,6 +22,7 @@ pip install -r requirements.txt
 
 ## Traing
 ### First set config of accelerate in ./config/default_config.yaml
+you should set your gpu envirment correctly, like [gpu_ids]....
 ```yaml
 compute_environment: LOCAL_MACHINE
 debug: false
