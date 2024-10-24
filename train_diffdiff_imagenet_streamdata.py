@@ -738,14 +738,18 @@ def main(args):
                 else:
                     raise ValueError(f"Unsupported prediction type: {args.prediction_type}")
 
-                accelerator.backward(loss)
+                # Check if the loss is NaN
+                if torch.isnan(loss):
+                    print("Loss is NaN, skipping this step.")
+                else:
+                    accelerator.backward(loss)
 
-                if accelerator.sync_gradients:
-                    accelerator.clip_grad_norm_(model1.parameters(), 1.0)
-                    accelerator.clip_grad_norm_(model2.parameters(), 1.0)
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
+                    if accelerator.sync_gradients:
+                        accelerator.clip_grad_norm_(model1.parameters(), 1.0)
+                        accelerator.clip_grad_norm_(model2.parameters(), 1.0)
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
